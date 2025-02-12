@@ -1,0 +1,40 @@
+[
+  {
+    "id": 1,
+    "text": "Juan Arango escaped punishment from the referee for biting Jesus Zavela .\nHe could face a retrospective punishment for the incident .\nArango had earlier scored a free kick in his team's 4-3 defeat .",
+    "claims": [
+      "Juan Arango escaped punishment.",
+      "The referee was the one who punished Juan Arango.",
+      "Juan Arango could face punishment for biting Jesus Zavela.",
+      "Biting Jesus Zavela is a punishable offense.",
+      "Arango had earlier scored a free kick."
+    ],
+    "model_config": {
+      "model_type": "jan_local",
+      "model_name_or_path": "llama3.2-1b-instruct",
+      "device": "mps",
+      "temperature": 0.0,
+      "max_length": 512,
+      "batch_size": 8
+    }
+  },
+  {
+    "id": 2,
+    "text": "The spread, which was shot by photographer Mario Testino, also stars Gigi Hadid, Ansel Elgort, Dylan Penn and her younger brother Hopper .\nThis is 19-year-old Kendall's fifth time appearing in the pages of Vogue .",
+    "claims": [
+      "The spread was shot by photographer Mario Testino.",
+      "Gigi Hadid stars in The spread.",
+      "Mario Testino also stars Gigi Hadid.",
+      "Kendall appears in The spread for the fifth time.",
+      "19-year-old Kendall is featured in Vogue."
+    ],
+    "model_config": {
+      "model_type": "jan_local",
+      "model_name_or_path": "llama3.2-1b-instruct",
+      "device": "mps",
+      "temperature": 0.0,
+      "max_length": 512,
+      "batch_size": 8
+    }
+  }
+]
