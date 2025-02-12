@@ -8,6 +8,7 @@ class ModelType(Enum):
     HUGGINGFACE = "huggingface"
     OPENAI = "openai"
     JAN_LOCAL = "jan_local"
+    KG_TO_CLAIMS = "kg_to_claims"
     # If needed, you can add more model types in the future.
 
 
