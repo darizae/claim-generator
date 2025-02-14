@@ -115,55 +115,75 @@ INPUT:
 OUTPUT:
     """,
     PromptTemplate.GRANULARITY: r"""
-We define a claim as an "elementary information unit in a sentence."
+We define a claim as an "elementary piece of information expressed in a sentence."
 
 We want a balanced approach with a controllable granularity knob.
 Current setting: {granularity} granularity.
 
 Guidelines:
-1) If granularity=low, allow minor conjunctions and multiple related facts in one claim.
-2) If granularity=medium, avoid excessive conjunctions, but it’s okay to include closely related ideas in a single claim.
-3) If granularity=high, split the text more aggressively so that each claim is near-atomic.
-4) Limit each claim to a maximum of 12 words if granularity=high, or 20 words for medium, or no strict limit for low.
-5) If possible, use a noun as the subject in the claim (avoid pronouns).
-6) Do not generate any novel words; be faithful to the provided input.
-7) Your response must be valid JSON and must not include any additional text or explanation.
-8) Validate that the JSON output is well-formed. 
 
-Examples:
+1) If granularity is low:
+   - Combine multiple related facts into as few claims as possible.
+   - It is acceptable to use conjunctions or semicolons to link several ideas in one claim.
+   - No strict word limit per claim, but keep the text cohesive.
+   - Example:
+     "NASA’s Perseverance rover discovered microbial life on Mars, changed the approach to planetary exploration, 
+      and prompted increased funding for future missions."
 
-- LOW granularity example:
-  "NASA’s Perseverance rover discovered microbial life on Mars and changed planetary exploration."
+2) If granularity is medium:
+   - Separate distinct or loosely related facts into individual claims, but you may group very closely related details together.
+   - Each claim should generally not exceed about 20 words.
+   - You might end up with 2–5 claims depending on the complexity of the text.
+   - Example:
+     "NASA’s Perseverance rover discovered microbial life on Mars.",
+     "This breakthrough shifted approaches to planetary exploration and funding."
 
-  {{"claims": [
-    "NASA’s Perseverance rover discovered microbial life on Mars and changed planetary exploration."
-  ]}}
+3) If granularity is high:
+   - Aggressively split the text so that each claim represents only one single fact or action.
+   - Limit each claim to no more than 12 words.
+   - Use multiple short claims to cover all relevant details in the source text.
+   - Example:
+     "NASA’s Perseverance rover discovered microbial life.",
+     "The discovery occurred on Mars.",
+     "It reshaped planetary exploration.",
+     "Future missions received more funding."
 
-- MEDIUM granularity example:
-  {{"claims": [
-    "NASA’s Perseverance rover discovered microbial life on Mars.",
-    "This discovery led to changes in planetary exploration."
-  ]}}
+Additional Instructions:
+- Always use a noun as the subject in each claim when possible (avoid pronouns).
+- Be faithful to the provided input text (do not introduce new words).
+- Your response must be valid JSON and include no additional text or explanation.
+- Ensure that the JSON output is well-formed and contains an array called "claims".
 
-- HIGH granularity example:
-  {{"claims": [
-    "NASA’s Perseverance rover discovered microbial life.",
-    "The microbial life was discovered on Mars.",
-    "The discovery changed planetary exploration."
-  ]}}
+More Detailed Examples:
 
+- **LOW granularity example**:
+  ```json
+  {{
+    "claims": [
+      "NASA’s Perseverance rover discovered ancient microorganisms, changed how we explore planets, and influenced future funding decisions for Mars missions."
+    ]
+  }}
+MEDIUM granularity example:
+{{
+  "claims": [
+    "NASA’s Perseverance rover discovered ancient microorganisms on Mars.",
+    "That finding led to shifts in exploration strategies and funding."
+  ]
+}}
+HIGH granularity example:
+{{
+  "claims": [
+    "NASA’s Perseverance rover discovered ancient microorganisms.",
+    "They were found on Mars.",
+    "The discovery altered exploration strategies.",
+    "Funding priorities were also impacted."
+  ]
+}}
 Now do the same for this input:
 
-INPUT:
-{SOURCE_TEXT}
+INPUT: {SOURCE_TEXT}
 
 OUTPUT:
-""",
-    PromptTemplate.SECOND_RUN: r"""
-Split the following claim into multiple atomic claims if necessary:
-"{claim}"
-- Each atomic claim must contain exactly one subject and one predicate.
-- Return the result in a JSON array format (array of strings), no extra text.
 """
 }
 
