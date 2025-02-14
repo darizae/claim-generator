@@ -12,7 +12,7 @@ from transformers import (
 )
 
 from .config import ModelConfig, ModelType
-from .prompts import get_prompt_template, PromptTemplate
+from .prompts import PromptTemplate, get_prompt_template
 
 
 class BaseClaimGenerator(ABC):
@@ -20,9 +20,10 @@ class BaseClaimGenerator(ABC):
     Abstract base class for all claim generators.
     """
 
-    def __init__(self, config: ModelConfig, prompt_template: PromptTemplate):
+    def __init__(self, config: ModelConfig, prompt_template: PromptTemplate, granularity: str = None):
         self.config = config
         self.prompt_template = prompt_template
+        self.granularity = granularity
 
     @abstractmethod
     def generate_claims(self, texts: List[str]) -> List[List[str]]:
@@ -31,12 +32,22 @@ class BaseClaimGenerator(ABC):
         """
         pass
 
-    def build_claim_extraction_prompt(self, text: str) -> str:
+    def build_claim_extraction_prompt(self, text: str, granularity: str = None) -> str:
         """
-        Inject the `text` into the selected prompt template.
+        Inject the `text` into the selected prompt template. Optionally pass a `granularity`
+        argument if the prompt requires it (e.g., PromptTemplate.GRANULARITY).
         """
-        template_str = get_prompt_template(self.prompt_template)
-        return template_str.format(SOURCE_TEXT=text)
+        # If you only want to pass granularity when the template is GRANULARITY-based:
+        if self.prompt_template == PromptTemplate.GRANULARITY and granularity:
+            template_str = get_prompt_template(
+                self.prompt_template,
+                SOURCE_TEXT=text,
+                granularity=granularity
+            )
+        else:
+            template_str = get_prompt_template(self.prompt_template, SOURCE_TEXT=text)
+
+        return template_str
 
     @staticmethod
     def chunked(iterable, size: int):
@@ -107,8 +118,8 @@ class HuggingFaceCausalGenerator(BaseClaimGenerator):
     Generator that uses a causal (decoder-only) HF model.
     """
 
-    def __init__(self, config: ModelConfig, prompt_template: PromptTemplate):
-        super().__init__(config, prompt_template)
+    def __init__(self, config: ModelConfig, prompt_template: PromptTemplate, granularity: str = None):
+        super().__init__(config, prompt_template, granularity)
         self.tokenizer, self.model = self._load_model_and_tokenizer()
 
     def _load_model_and_tokenizer(self):
@@ -130,7 +141,7 @@ class HuggingFaceCausalGenerator(BaseClaimGenerator):
     def generate_claims(self, texts: List[str]) -> List[List[str]]:
         all_claims = []
         for batch in self.chunked(texts, self.config.batch_size):
-            prompts = [self.build_claim_extraction_prompt(t) for t in batch]
+            prompts = [self.build_claim_extraction_prompt(t, self.granularity) for t in batch]
 
             inputs = self.tokenizer(
                 prompts,
@@ -157,8 +168,8 @@ class HuggingFaceCausalGenerator(BaseClaimGenerator):
 
 
 class OpenAIClaimGenerator(BaseClaimGenerator):
-    def __init__(self, config: ModelConfig, prompt_template: PromptTemplate):
-        super().__init__(config, prompt_template)
+    def __init__(self, config: ModelConfig, prompt_template: PromptTemplate, granularity: str = None):
+        super().__init__(config, prompt_template, granularity)
         openai_api_key = config.api_key or os.getenv("OPENAI_API_KEY")
         self.client = openai.OpenAI(api_key=openai_api_key)
         if not self.client.api_key:
@@ -168,7 +179,7 @@ class OpenAIClaimGenerator(BaseClaimGenerator):
         all_claims = []
         for batch in self.chunked(texts, self.config.batch_size):
             for text in batch:
-                prompt = self.build_claim_extraction_prompt(text)
+                prompt = self.build_claim_extraction_prompt(text, self.granularity)
                 response = self.client.chat.completions.create(
                     model=self.config.model_name_or_path,
                     messages=[{"role": "user", "content": prompt}],
@@ -185,8 +196,8 @@ class JanLocalClaimGenerator(BaseClaimGenerator):
     Example for a local “Jan” server that mimics OpenAI's API spec.
     """
 
-    def __init__(self, config: ModelConfig, prompt_template: PromptTemplate):
-        super().__init__(config, prompt_template)
+    def __init__(self, config: ModelConfig, prompt_template: PromptTemplate, granularity: str = None):
+        super().__init__(config, prompt_template, granularity)
         if not config.endpoint_url:
             raise ValueError("endpoint_url must be provided for JanLocalClaimGenerator.")
 
@@ -194,7 +205,7 @@ class JanLocalClaimGenerator(BaseClaimGenerator):
         all_claims = []
         for batch in self.chunked(texts, self.config.batch_size):
             for text in batch:
-                prompt = self.build_claim_extraction_prompt(text)
+                prompt = self.build_claim_extraction_prompt(text, self.granularity)
                 payload = {
                     "model": self.config.model_name_or_path,
                     "messages": [{"role": "user", "content": prompt}],
@@ -217,7 +228,11 @@ class JanLocalClaimGenerator(BaseClaimGenerator):
         return all_claims
 
 
-def create_generator(config: ModelConfig, prompt_template: PromptTemplate) -> BaseClaimGenerator:
+def create_generator(
+        config: ModelConfig,
+        prompt_template: PromptTemplate,
+        granularity: str = None
+) -> BaseClaimGenerator:
     """
     Factory function that returns the appropriate claim generator
     based on config.model_type.
@@ -229,12 +244,12 @@ def create_generator(config: ModelConfig, prompt_template: PromptTemplate) -> Ba
         # But you can do more robust checks or add a separate config field if you prefer.
         lower_name = config.model_name_or_path.lower()
         if any(x in lower_name for x in ["gpt", "llama", "opt", "falcon"]):
-            return HuggingFaceCausalGenerator(config, prompt_template)
+            return HuggingFaceCausalGenerator(config, prompt_template, granularity)
         else:
             return HuggingFaceSeq2SeqGenerator(config)
     elif config.model_type == ModelType.OPENAI:
-        return OpenAIClaimGenerator(config, prompt_template)
+        return OpenAIClaimGenerator(config, prompt_template, granularity)
     elif config.model_type == ModelType.JAN_LOCAL:
-        return JanLocalClaimGenerator(config, prompt_template)
+        return JanLocalClaimGenerator(config, prompt_template, granularity)
     else:
         raise ValueError(f"Unsupported model type: {config.model_type}")

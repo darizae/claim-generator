@@ -1,6 +1,6 @@
 from .config import ModelConfig, ModelType, PathConfig
 from .generator import create_generator, BaseClaimGenerator
-from .prompts import PromptTemplate
+from .prompts import PromptTemplate, get_prompt_template
 from .cli import main as cli_main
 
 __all__ = [
@@ -10,5 +10,6 @@ __all__ = [
     "PromptTemplate",
     "BaseClaimGenerator",
     "create_generator",
-    "cli_main"
+    "cli_main",
+    "get_prompt_template"
 ]
