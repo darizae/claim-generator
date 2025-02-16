@@ -13,6 +13,7 @@ from transformers import (
 
 from .config import ModelConfig, ModelType
 from .prompts import PromptTemplate, get_prompt_template
+from .utils import retry_with_exponential_backoff
 
 
 class BaseClaimGenerator(ABC):
@@ -174,17 +175,28 @@ class OpenAIClaimGenerator(BaseClaimGenerator):
         self.client = openai.OpenAI(api_key=openai_api_key)
         if not self.client.api_key:
             raise ValueError("OpenAI API key not found in config or environment.")
+        openai.request_timeout = 30
+
+    @retry_with_exponential_backoff
+    def _call_openai_chat(self, prompt):
+        """
+        Isolated function for the actual chat.completions.create call,
+        so it can be wrapped in a retry decorator.
+        """
+        response = openai.ChatCompletion.create(
+            model=self.config.model_name_or_path,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=self.config.temperature,
+            # request_timeout=30,  # Additional param if you want an explicit per-call timeout
+        )
+        return response
 
     def generate_claims(self, texts: List[str]) -> List[List[str]]:
         all_claims = []
         for batch in self.chunked(texts, self.config.batch_size):
             for text in batch:
                 prompt = self.build_claim_extraction_prompt(text, self.granularity)
-                response = self.client.chat.completions.create(
-                    model=self.config.model_name_or_path,
-                    messages=[{"role": "user", "content": prompt}],
-                    temperature=self.config.temperature
-                )
+                response = self._call_openai_chat(prompt)
                 content = response.choices[0].message.content
                 claims = self.parse_json_output(content)
                 all_claims.append(claims)
@@ -201,6 +213,19 @@ class JanLocalClaimGenerator(BaseClaimGenerator):
         if not config.endpoint_url:
             raise ValueError("endpoint_url must be provided for JanLocalClaimGenerator.")
 
+    @retry_with_exponential_backoff
+    def _call_jan_server(self, payload, headers):
+        """
+        Isolated function for the actual requests.post call,
+        so it can be decorated with retry logic.
+        """
+        return requests.post(
+            self.config.endpoint_url,
+            json=payload,
+            headers=headers,
+            timeout=30
+        )
+
     def generate_claims(self, texts: List[str]) -> List[List[str]]:
         all_claims = []
         for batch in self.chunked(texts, self.config.batch_size):
@@ -212,7 +237,8 @@ class JanLocalClaimGenerator(BaseClaimGenerator):
                     "temperature": self.config.temperature,
                 }
                 headers = {"Content-Type": "application/json"}
-                resp = requests.post(self.config.endpoint_url, json=payload, headers=headers)
+
+                resp = self._call_jan_server(payload, headers)
                 resp.raise_for_status()
 
                 data = resp.json()
