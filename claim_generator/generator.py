@@ -5,6 +5,9 @@ from abc import ABC, abstractmethod
 from typing import List
 
 import openai
+from openai import OpenAI
+
+client = OpenAI()
 from transformers import (
     AutoTokenizer,
     AutoModelForSeq2SeqLM,
@@ -172,10 +175,9 @@ class OpenAIClaimGenerator(BaseClaimGenerator):
     def __init__(self, config: ModelConfig, prompt_template: PromptTemplate, granularity: str = None):
         super().__init__(config, prompt_template, granularity)
         openai_api_key = config.api_key or os.getenv("OPENAI_API_KEY")
-        self.client = openai.OpenAI(api_key=openai_api_key)
+        self.client = openai.OpenAI(api_key=openai_api_key, timeout=30)
         if not self.client.api_key:
             raise ValueError("OpenAI API key not found in config or environment.")
-        openai.request_timeout = 30
 
     @retry_with_exponential_backoff
     def _call_openai_chat(self, prompt):
@@ -183,11 +185,11 @@ class OpenAIClaimGenerator(BaseClaimGenerator):
         Isolated function for the actual chat.completions.create call,
         so it can be wrapped in a retry decorator.
         """
-        response = openai.ChatCompletion.create(
+        response = client.chat.completions.create(
             model=self.config.model_name_or_path,
             messages=[{"role": "user", "content": prompt}],
             temperature=self.config.temperature,
-            # request_timeout=30,  # Additional param if you want an explicit per-call timeout
+
         )
         return response
 

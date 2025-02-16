@@ -45,7 +45,9 @@ class PromptStrategy(Enum):
 
 SELECTED_MODEL = ModelChoice.GPT
 SELECTED_DATASET = DatasetChoice.SMALL
-SELECTED_PROMPT = PromptStrategy.GRANULARITY_HIGH
+SELECTED_PROMPT = PromptStrategy.MAXIMIZE_COVERAGE
+BATCH_SAVE_EVERY = 10
+PRINT_PROGRESS = True
 
 OUTPUT_DIR = Path("data") / "outputs"
 
@@ -59,7 +61,6 @@ def get_model_config(model_choice: ModelChoice) -> ModelConfig:
             model_type=ModelType.OPENAI,
             model_name_or_path=model_choice.value,
             api_key=openai_api_key,
-            temperature=0.0
         )
     elif model_choice == ModelChoice.JAN:
         return ModelConfig(
@@ -136,6 +137,9 @@ def main():
     # -------------------------------------------------------------------------
     # 2.4) Generate claims for every entry's "reference"
     # -------------------------------------------------------------------------
+
+    processed_count = 0
+
     for dataset_name, entries in rose_data.items():
         for entry in entries:
             # If "reference" doesn't exist, skip
@@ -168,15 +172,32 @@ def main():
                 "model_output_claims": new_claims
             })
 
+            processed_count += 1
+            if processed_count % BATCH_SAVE_EVERY == 0:
+                print(f"[INFO] Processed {processed_count} entries so far; saving partial results...")
+                with out_path.open("w", encoding="utf-8") as f_out:
+                    json.dump(rose_data, f_out, indent=2, ensure_ascii=False)
+
+            if not PRINT_PROGRESS:
+                continue
+
+            record_id = entry["record_id"]
+            print(f"[INFO] Generated claims for record {record_id}")
+
     # -------------------------------------------------------------------------
     # 2.5) Write out the updated "with_claims" JSON again
     # -------------------------------------------------------------------------
+    print(f"[INFO] Completed processing. Saving final results to {out_path}.")
     with out_path.open("w", encoding="utf-8") as f_out:
         json.dump(rose_data, f_out, indent=2, ensure_ascii=False)
 
     print(f"[INFO] Updated {out_path} with new claims under key '{joined_label}'.")
 
     # Also write out the synthetic data in a separate file
+
+    if SELECTED_DATASET == DatasetChoice.SMALL:
+        return
+
     synthetic_out_filename = input_filename.replace(".json", "") + f"__{joined_label}_synthetic.json"
     synthetic_out_path = OUTPUT_DIR / synthetic_out_filename
     with synthetic_out_path.open("w", encoding="utf-8") as f_syn:
