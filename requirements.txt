@@ -5,3 +5,4 @@ device-selector>=0.1.0
 transformers>=4.48.3
 sentencepiece>=0.2.0
 protobuf>=5.29.3
+kg-parser>=0.1.1

@@ -18,6 +18,8 @@ from .config import ModelConfig, ModelType
 from .prompts import PromptTemplate, get_prompt_template
 from .utils import retry_with_exponential_backoff
 
+from kg_parser import KGParser, KGOutput
+
 
 class BaseClaimGenerator(ABC):
     """
@@ -254,6 +256,44 @@ class JanLocalClaimGenerator(BaseClaimGenerator):
                 all_claims.append(claims)
 
         return all_claims
+
+
+class KGToClaimsGenerator(BaseClaimGenerator):
+    def __init__(self, config: ModelConfig):
+        super().__init__(config, PromptTemplate.DEFAULT)
+        self.kg_parser = KGParser(config)
+        self.triple_to_text_endpoint = "http://localhost:1337/v1/chat/completions"
+
+    def generate_claims(self, texts: List[str]) -> List[List[str]]:
+        outputs = self.kg_parser.parse_batch(texts)
+        all_claims = []
+        for out in outputs:
+            triple_claims = []
+            for triple in out.triples:
+                claim_text = self._triple_to_text(triple)
+                triple_claims.append(claim_text)
+            all_claims.append(triple_claims)
+        return all_claims
+
+    def _triple_to_text(self, triple) -> str:
+        payload = {
+            "model": self.config.model_name_or_path,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": f"Convert the triple [{triple.subject}, {triple.predicate}, {triple.object}] into a short statement."
+                }
+            ],
+            "temperature": self.config.temperature,
+        }
+        headers = {"Content-Type": "application/json"}
+        resp = requests.post(self.triple_to_text_endpoint, json=payload, headers=headers)
+        resp.raise_for_status()
+        data = resp.json()
+        choices = data.get("choices", [])
+        if not choices:
+            return f"{triple.subject} {triple.predicate} {triple.object}"
+        return choices[0]["message"]["content"].strip()
 
 
 def create_generator(

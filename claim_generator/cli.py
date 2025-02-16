@@ -7,6 +7,7 @@ from .config import ModelConfig, ModelType, PathConfig
 from .prompts import PromptTemplate
 from .generator import create_generator
 
+
 def main():
     parser = argparse.ArgumentParser(description="CLI for claim generation.")
     parser.add_argument("--model-type", type=str, default="huggingface",
