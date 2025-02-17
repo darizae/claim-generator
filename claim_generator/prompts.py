@@ -187,6 +187,21 @@ OUTPUT:
 """
 }
 
+TRIPLE_TO_CLAIM_PROMPT = r"""
+("system",
+""
+Convert a triple into a short, standalone factual statement. 
+Return only the statement text. 
+Do not add JSON or extraneous formatting.
+""
+),
+("user",
+""
+Triple: [{subject}, {predicate}, {object}]
+""
+),
+"""
+
 
 def get_prompt_template(template: PromptTemplate, **kwargs) -> str:
     """

@@ -14,11 +14,11 @@ from transformers import (
     AutoModelForCausalLM,
 )
 
-from .config import ModelConfig, ModelType
+from .config import ModelType
 from .prompts import PromptTemplate, get_prompt_template
-from .utils import retry_with_exponential_backoff
+from .triple_to_claim_models import *
 
-from kg_parser import KGParser, KGOutput
+from kg_parser import KGParser
 
 
 class BaseClaimGenerator(ABC):
@@ -259,41 +259,58 @@ class JanLocalClaimGenerator(BaseClaimGenerator):
 
 
 class KGToClaimsGenerator(BaseClaimGenerator):
+    """
+    A pipeline generator:
+      1) Use KGParser to extract triples from raw text.
+      2) Convert each triple to a short claim string using a triple->claim LLM.
+    """
     def __init__(self, config: ModelConfig):
+        # We can ignore the prompt_template since we generate claims
+        # from triples. We can still set it to DEFAULT to fulfill the interface.
         super().__init__(config, PromptTemplate.DEFAULT)
+
+        # Step 1: Build the KGParser with the same config => model_type can be HF/OPENAI/JAN
+        # This means the text->KG step uses "huggingface", "openai", or "jan_local" LLM backend
+        from kg_parser import ModelType as KGModelType
+        config.model_type = KGModelType.OPENAI
         self.kg_parser = KGParser(config)
-        self.triple_to_text_endpoint = "http://localhost:1337/v1/chat/completions"
+        config.model_type = ModelType.OPENAI
+
+        # Step 2: Build the triple->claim model using the same model_type
+        # (or you could add a separate config parameter if you want them different).
+        self.triple_to_claim_model = self._initialize_triple_to_claim_model(config)
+
+    def _initialize_triple_to_claim_model(self, config: ModelConfig) -> BaseTripleToClaimModel:
+        if config.model_type == ModelType.HUGGINGFACE:
+            return HuggingFaceTripleToClaimModel(config)
+        elif config.model_type == ModelType.OPENAI:
+            return OpenAITripleToClaimModel(config)
+        elif config.model_type == ModelType.JAN_LOCAL:
+            return JanLocalTripleToClaimModel(config)
+        else:
+            raise ValueError("KGToClaimsGenerator expects HF, OPENAI, or JAN_LOCAL model_type for triple→claim step.")
 
     def generate_claims(self, texts: List[str]) -> List[List[str]]:
-        outputs = self.kg_parser.parse_batch(texts)
+        """
+        For each text:
+          - parse a KG => list of triples
+          - for each triple, do triple->claim
+          - return a list of claims (strings)
+        """
+        kg_outputs = self.kg_parser.parse_batch(texts)  # List[KGOutput]
         all_claims = []
-        for out in outputs:
+        for kg_out in kg_outputs:
+            # Convert each triple to text
             triple_claims = []
-            for triple in out.triples:
-                claim_text = self._triple_to_text(triple)
+            for triple in kg_out.triples:
+                claim_text = self.triple_to_claim_model.triple_to_claim(
+                    triple.subject,
+                    triple.predicate,
+                    triple.object
+                )
                 triple_claims.append(claim_text)
             all_claims.append(triple_claims)
         return all_claims
-
-    def _triple_to_text(self, triple) -> str:
-        payload = {
-            "model": self.config.model_name_or_path,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": f"Convert the triple [{triple.subject}, {triple.predicate}, {triple.object}] into a short statement."
-                }
-            ],
-            "temperature": self.config.temperature,
-        }
-        headers = {"Content-Type": "application/json"}
-        resp = requests.post(self.triple_to_text_endpoint, json=payload, headers=headers)
-        resp.raise_for_status()
-        data = resp.json()
-        choices = data.get("choices", [])
-        if not choices:
-            return f"{triple.subject} {triple.predicate} {triple.object}"
-        return choices[0]["message"]["content"].strip()
 
 
 def create_generator(
@@ -319,5 +336,7 @@ def create_generator(
         return OpenAIClaimGenerator(config, prompt_template, granularity)
     elif config.model_type == ModelType.JAN_LOCAL:
         return JanLocalClaimGenerator(config, prompt_template, granularity)
+    elif config.model_type == ModelType.KG_TO_CLAIMS:
+        return KGToClaimsGenerator(config)
     else:
         raise ValueError(f"Unsupported model type: {config.model_type}")
