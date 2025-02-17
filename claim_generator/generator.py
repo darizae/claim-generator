@@ -2,7 +2,7 @@ import json
 import os
 import requests
 from abc import ABC, abstractmethod
-from typing import List
+from typing import List, Tuple
 
 import openai
 from openai import OpenAI
@@ -260,24 +260,25 @@ class JanLocalClaimGenerator(BaseClaimGenerator):
 
 class KGToClaimsGenerator(BaseClaimGenerator):
     """
-    A pipeline generator:
-      1) Use KGParser to extract triples from raw text.
-      2) Convert each triple to a short claim string using a triple->claim LLM.
-    """
-    def __init__(self, config: ModelConfig):
-        # We can ignore the prompt_template since we generate claims
-        # from triples. We can still set it to DEFAULT to fulfill the interface.
-        super().__init__(config, PromptTemplate.DEFAULT)
+    A pipeline generator that:
+      1) Uses KGParser to extract triples from raw text.
+      2) Converts each triple to a natural language claim.
 
-        # Step 1: Build the KGParser with the same config => model_type can be HF/OPENAI/JAN
-        # This means the text->KG step uses "huggingface", "openai", or "jan_local" LLM backend
+    It also exposes intermediate information for synthetic logging:
+      - The original text ("reference")
+      - The full prompt sent to kg-parser
+      - The KG parser's output (in dict form)
+      - The full triple-to-claim prompt for each triple
+      - The array of claims produced
+    """
+
+    def __init__(self, config: ModelConfig):
+        # We ignore the prompt_template since we use the internal kg-parser prompt.
+        super().__init__(config, PromptTemplate.DEFAULT)
         from kg_parser import ModelType as KGModelType
         config.model_type = KGModelType.OPENAI
         self.kg_parser = KGParser(config)
         config.model_type = ModelType.OPENAI
-
-        # Step 2: Build the triple->claim model using the same model_type
-        # (or you could add a separate config parameter if you want them different).
         self.triple_to_claim_model = self._initialize_triple_to_claim_model(config)
 
     def _initialize_triple_to_claim_model(self, config: ModelConfig) -> BaseTripleToClaimModel:
@@ -292,25 +293,60 @@ class KGToClaimsGenerator(BaseClaimGenerator):
 
     def generate_claims(self, texts: List[str]) -> List[List[str]]:
         """
-        For each text:
-          - parse a KG => list of triples
-          - for each triple, do triple->claim
-          - return a list of claims (strings)
+        Regular method returning just the claims.
         """
-        kg_outputs = self.kg_parser.parse_batch(texts)  # List[KGOutput]
+        _, claims = self.generate_claims_with_intermediates(texts)
+        return claims
+
+    def generate_claims_with_intermediates(self, texts: List[str]) -> Tuple[List[dict], List[List[str]]]:
+        """
+        For each input text, this method returns a synthetic dictionary with:
+          - 'reference': the original text
+          - 'kg_parser_prompt': the full prompt used by kg-parser
+          - 'kg_output': the KG parser's output (triples in dict form)
+          - 'triple_to_claim_prompts': a list of the full prompts used for converting each triple
+          - 'claims': a list of natural language claims (one per triple)
+
+        Also returns a list of claim arrays (one array per input) for compatibility.
+        """
+        # Import the KG parser prompt template.
+        from kg_parser.prompt_templates import REFINED_CLAIM_PROMPT
+
+        kg_outputs = self.kg_parser.parse_batch(texts)
+        synthetic_outputs = []
         all_claims = []
-        for kg_out in kg_outputs:
-            # Convert each triple to text
-            triple_claims = []
+        for text, kg_out in zip(texts, kg_outputs):
+            # Compute the full prompt used in kg-parser:
+            kg_parser_prompt = REFINED_CLAIM_PROMPT.format(input=text)
+            # Convert the KGOutput into dict form:
+            kg_output_dict = {"triples": [vars(triple) for triple in kg_out.triples]}
+            triple_prompts = []
+            claims_for_text = []
             for triple in kg_out.triples:
+                # Compute the triple-to-claim prompt using our TRIPLE_TO_CLAIM_PROMPT template:
+                triple_prompt = TRIPLE_TO_CLAIM_PROMPT.format(
+                    subject=triple.subject,
+                    predicate=triple.predicate,
+                    object=triple.object
+                )
+                triple_prompts.append(triple_prompt)
+                # Generate the claim for this triple:
                 claim_text = self.triple_to_claim_model.triple_to_claim(
                     triple.subject,
                     triple.predicate,
                     triple.object
                 )
-                triple_claims.append(claim_text)
-            all_claims.append(triple_claims)
-        return all_claims
+                claims_for_text.append(claim_text)
+            synthetic_entry = {
+                "reference": text,
+                "kg_parser_prompt": kg_parser_prompt,
+                "kg_output": kg_output_dict,
+                "triple_to_claim_prompts": triple_prompts,
+                "claims": claims_for_text
+            }
+            synthetic_outputs.append(synthetic_entry)
+            all_claims.append(claims_for_text)
+        return synthetic_outputs, all_claims
 
 
 def create_generator(
