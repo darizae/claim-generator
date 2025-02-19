@@ -3,7 +3,7 @@
 validate_datasets.py
 
 Validates the structure and data in:
-1) rose_datasets_with_claims.json
+1) rose_datasets_with_claims_with_click.json
 2) rose_datasets_kg_claims_synthetic.json
 
 Checks performed:
@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 
 def validate_rose_datasets_with_claims(path: str):
     """
-    Validates the structure of rose_datasets_with_claims.json.
+    Validates the structure of rose_datasets_with_claims_with_click.json.
     Returns the loaded JSON (dict) if valid (or partially valid).
     Logs issues to validation.log.
     """
@@ -296,7 +296,7 @@ def validate_and_reorder_rose_datasets_kg_claims_synthetic(path: str, output_pat
 
 def main():
     # Adjust file names/paths to match your setup
-    path_rose_with_claims = "rose_datasets_with_claims_no_click.json"
+    path_rose_with_claims = "rose_datasets_with_claims.json"
     path_kg_claims_synthetic = "rose_datasets_kg_claims_synthetic.json"
     path_kg_claims_synthetic_out = "rose_datasets_kg_claims_synthetic.json"
 

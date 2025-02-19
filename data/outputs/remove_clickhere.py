@@ -6,13 +6,13 @@ Removes any claim/string containing the substrings "CLICK HERE" or "Click here"
 (case-sensitive) from the RoSE dataset (except from the 'reference' key).
 
 Steps:
-  1) Load rose_datasets_with_claims.json
+  1) Load rose_datasets_with_claims_with_click.json
   2) Skip or ignore the 'reference' key for removal
   3) If a field's value is a single string containing "CLICK HERE" or "Click here",
      remove that key from the entry entirely
   4) If a field's value is a list of strings, remove only the items containing those substrings
   5) Log the removals (record_id, key, and the removed string)
-  6) Save the cleaned result to rose_datasets_with_claims_no_click.json
+  6) Save the cleaned result to rose_datasets_with_claims.json
 """
 
 import json
@@ -28,8 +28,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-INPUT_FILE = "rose_datasets_with_claims.json"
-OUTPUT_FILE = "rose_datasets_with_claims_no_click.json"
+INPUT_FILE = "rose_datasets_with_claims_with_click.json"
+OUTPUT_FILE = "rose_datasets_with_claims.json"
 
 TARGET_SUBSTRINGS = ["CLICK HERE", "Click here"]  # case-sensitive checks
 

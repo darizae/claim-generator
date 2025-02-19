@@ -109,7 +109,7 @@ def main():
     # -------------------------------------------------------------------------
     input_filename = SELECTED_DATASET.value  # e.g. "rose_datasets.json"
     base_name = input_filename.replace(".json", "")  # e.g. "rose_datasets"
-    out_filename = base_name + "_with_claims.json"   # e.g. "rose_datasets_with_claims.json"
+    out_filename = base_name + "_with_claims.json"   # e.g. "rose_datasets_with_claims_with_click.json"
 
     out_path = OUTPUT_DIR / out_filename
     if not out_path.exists():
