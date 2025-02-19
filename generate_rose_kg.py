@@ -4,10 +4,11 @@ generate_rose_kg.py
 
 Processes the RoSE dataset to produce KG-based claims. Key features:
 
-1) Skips API calls if "kg_based_claims" already present.
-2) Saves partial results (both main JSON and synthetic JSON) every 10 entries.
-3) If an entry has existing "kg_based_claims" but no synthetic data yet,
-   it builds a partial synthetic entry without calling the LLM.
+1) For each entry, if "kg_based_claims" is missing or empty, it calls the KG→claims pipeline.
+2) If "kg_based_claims" is present and non-empty, it skips re-generation.
+3) Saves partial results (both main JSON and synthetic JSON) every BATCH_SAVE_EVERY entries.
+4) If an entry has "kg_based_claims" but is missing from the synthetic dataset, it builds
+   a partial synthetic entry without calling the LLM again.
 
 NOTE: This script assumes each entry has a unique "record_id" to identify it
       for synthetic data. If not, you'll need to adapt the uniqueness logic.
@@ -82,6 +83,7 @@ def main():
         print(f"[INFO] Found existing synthetic file '{synthetic_out_path}'. Loading it.")
         with synthetic_out_path.open("r", encoding="utf-8") as f_syn:
             existing_synthetic = json.load(f_syn)
+
         # Build an index so we don't duplicate or overwrite
         for syn_entry in existing_synthetic:
             rec_id = syn_entry.get("record_id")
@@ -104,98 +106,104 @@ def main():
     )
     generator = create_generator(config, PromptTemplate.DEFAULT)
 
-    # -------------------------------------------------------------------------
-    # 6) Iteration & partial logic
-    # -------------------------------------------------------------------------
-    from kg_parser.prompt_templates import REFINED_CLAIM_PROMPT  # for reconstructing prompt
+    # We might need REFINED_CLAIM_PROMPT for building partial synthetic entries
+    from kg_parser.prompt_templates import REFINED_CLAIM_PROMPT
 
+    # -------------------------------------------------------------------------
+    # 6) Iterate Over Entries & Decide Whether to Generate
+    # -------------------------------------------------------------------------
     processed_count = 0
 
     for dataset_name, entries in rose_data_with_claims.items():
         for entry in entries:
             record_id = entry.get("record_id", None)
             if "reference" not in entry:
+                # No text => skip
                 continue
 
             text = entry["reference"]
-            already_has_claims = "kg_based_claims" in entry
 
-            # (A) If we've already built synthetic data for this record, skip entirely
-            if record_id in synthetic_index:
-                # It's fully accounted for in the synthetic dataset
-                if PRINT_PROGRESS:
-                    print(f"[INFO] record_id={record_id} => already in synthetic dataset. Skipping.")
+            # Check if "kg_based_claims" is present and non-empty
+            # i.e., "already has claims"
+
+            is_the_claim = entry["record_id"] == "cnndm_test_202"
+
+            if not is_the_claim:
                 continue
 
-            if already_has_claims:
-                # ---------------------------------------------------------
-                # (B) We already have claims => skip API calls,
-                # but build a partial synthetic entry if it doesn't exist.
-                # ---------------------------------------------------------
-                if PRINT_PROGRESS:
-                    print(
-                        f"[INFO] record_id={record_id} => claims already present. Building synthetic from existing data...")
-
-                # Build partial synthetic data. We do NOT have the actual triples or triple prompts
-                # unless we previously stored them. So we fill placeholders:
-                claims_from_main = entry["kg_based_claims"]
-
-                synthetic_entry = {
-                    "record_id": record_id,
-                    "dataset_name": dataset_name,
-                    "reference": text,
-                    # We can still reconstruct the parser prompt for reference:
-                    "kg_parser_prompt": REFINED_CLAIM_PROMPT.format(input=text),
-                    # But we never stored the triple data => set placeholders:
-                    "kg_output": "unavailable (already generated; no stored triple data)",
-                    "triple_to_claim_prompts": "unavailable (already generated; no stored triple data)",
-                    "claims": claims_from_main
-                }
-
-                synthetic_dataset.append(synthetic_entry)
-                synthetic_index[record_id] = synthetic_entry
-
+            if "kg_based_claims" in entry:
+                # If we do have "kg_based_claims", let's see if it's empty:
+                if entry["kg_based_claims"] and len(entry["kg_based_claims"]) > 0:
+                    already_has_claims = True
+                else:
+                    # It's an empty list => treat as no claims
+                    already_has_claims = False
             else:
-                # ---------------------------------------------------------
-                # (C) We do NOT have claims => we need to call the pipeline.
-                # ---------------------------------------------------------
-                if PRINT_PROGRESS:
-                    print(f"[INFO] record_id={record_id} => generating claims via KG parser + triple->claim...")
+                already_has_claims = False
 
-                # We'll generate both the final claims and the synthetic info:
-                synthetic_entries, all_claims_lists = generator.generate_claims_with_intermediates([text])
-                # Each is a single-element list because we're passing a single text
-                syn_obj = synthetic_entries[0]  # dict with references, prompts, etc.
-                claims = all_claims_lists[0]
+            if is_the_claim:
+                already_has_claims = False
 
-                # Add "record_id" and "dataset_name" for clarity
-                syn_obj["record_id"] = record_id
-                syn_obj["dataset_name"] = dataset_name
+            # (B) If "kg_based_claims" are present & non-empty, skip LLM calls,
+            #     build partial synthetic if not in synthetic file
+            if already_has_claims:
+                continue
 
-                # Save final claims in the main data structure
-                entry["kg_based_claims"] = claims
+            # (C) If we do NOT have claims at all or it's an empty list => re-run pipeline
 
-                # Add synthetic object to our in-memory collection
-                synthetic_dataset.append(syn_obj)
-                synthetic_index[record_id] = syn_obj
+            if PRINT_PROGRESS:
+                print(f"[INFO] record_id={record_id} => generating claims via KG parser + triple->claim...")
 
-            # (D) Either way, we increment the processed count for partial saving
-            processed_count += 1
-            if processed_count % BATCH_SAVE_EVERY == 0:
-                print(f"[INFO] Processed {processed_count} entries => saving partial results...")
+            # We'll generate both the final claims and the synthetic info:
 
-                # Save the main data
-                with out_path.open("w", encoding="utf-8") as f_save:
-                    json.dump(rose_data_with_claims, f_save, indent=2, ensure_ascii=False)
+            synthetic_entries, all_claims_lists = generator.generate_claims_with_intermediates([text])
 
-                # Save the synthetic data
-                with synthetic_out_path.open("w", encoding="utf-8") as f_syn:
-                    json.dump(synthetic_dataset, f_syn, indent=2, ensure_ascii=False)
+            # Each is a single-element list because we're passing a single text
+
+            syn_obj = synthetic_entries[0]  # dict with references, prompts, etc.
+
+            claims = all_claims_lists[0]
+
+            # Add "record_id" and "dataset_name" for clarity
+
+            syn_obj["record_id"] = record_id
+
+            syn_obj["dataset_name"] = dataset_name
+
+            # Save final claims in the main data structure
+
+            entry["kg_based_claims"] = claims
+
+            # Store the synthetic object
+
+            synthetic_dataset.append(syn_obj)
+
+            synthetic_index[record_id] = syn_obj
+
+            # Save synthetic data
+
+            with synthetic_out_path.open("w", encoding="utf-8") as f_syn:
+
+                json.dump(synthetic_dataset, f_syn, indent=2, ensure_ascii=False)
+
+            # (D) Partial saves
+
+        processed_count += 1
+
+        if processed_count % BATCH_SAVE_EVERY == 0:
+            print(f"[INFO] Processed {processed_count} entries => saving partial results...")
+
+            # Save main data
+
+            with out_path.open("w", encoding="utf-8") as f_save:
+                json.dump(rose_data_with_claims, f_save, indent=2, ensure_ascii=False)
+
 
     # -------------------------------------------------------------------------
     # 7) Final save after the loop
     # -------------------------------------------------------------------------
-    print(f"[INFO] Completed. Saving final results to {out_path}")
+    print(f"[INFO] Completed. Processed a total of {processed_count} entries in this run.")
+    print(f"[INFO] Saving final results to {out_path}")
     with out_path.open("w", encoding="utf-8") as f_final:
         json.dump(rose_data_with_claims, f_final, indent=2, ensure_ascii=False)
 
