@@ -1,24 +1,18 @@
 import json
-import os
-import requests
-from abc import ABC, abstractmethod
 from typing import List, Tuple
 
 import openai
 from openai import OpenAI
 
 client = OpenAI()
-from transformers import (
-    AutoTokenizer,
-    AutoModelForSeq2SeqLM,
-    AutoModelForCausalLM,
-)
 
 from .config import ModelType
 from .prompts import PromptTemplate, get_prompt_template
 from .triple_to_claim_models import *
 
 from kg_parser import KGParser
+from kg_parser import ModelType as KGModelType
+from kg_parser.prompt_templates import REFINED_CLAIM_PROMPT
 
 
 class BaseClaimGenerator(ABC):
@@ -74,7 +68,7 @@ class BaseClaimGenerator(ABC):
             claims = data.get("claims", [])
             return claims if isinstance(claims, list) else []
         except json.JSONDecodeError:
-            return []
+            raise ValueError(f"Failed to parse JSON from {output_str}")
 
 
 class HuggingFaceSeq2SeqGenerator:
@@ -275,7 +269,6 @@ class KGToClaimsGenerator(BaseClaimGenerator):
     def __init__(self, config: ModelConfig):
         # We ignore the prompt_template since we use the internal kg-parser prompt.
         super().__init__(config, PromptTemplate.DEFAULT)
-        from kg_parser import ModelType as KGModelType
         config.model_type = KGModelType.OPENAI
         self.kg_parser = KGParser(config)
         config.model_type = ModelType.OPENAI
@@ -309,8 +302,6 @@ class KGToClaimsGenerator(BaseClaimGenerator):
 
         Also returns a list of claim arrays (one array per input) for compatibility.
         """
-        # Import the KG parser prompt template.
-        from kg_parser.prompt_templates import REFINED_CLAIM_PROMPT
 
         kg_outputs = self.kg_parser.parse_batch(texts)
         synthetic_outputs = []
