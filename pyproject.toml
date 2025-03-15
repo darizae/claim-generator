@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "claim-generator"
+version = "0.1.0"
+description = "A tool for generating claims from text using LLMs and knowledge graphs."
+readme = "README.md"
+authors = [{ name = "Daniel Ariza", email = "danielarizae@gmail.com" }]
+license = { file = "LICENSE" }
+dependencies = [
+    "tqdm",
+    "requests",
+    "openai>=1.61.0",
+    "device-selector>=0.1.0",
+    "transformers>=4.48.3",
+    "sentencepiece>=0.2.0",
+    "protobuf>=5.29.3",
+    "kg-parser>=0.1.1"
+]
+
+[tool.setuptools]
+packages = ["claim_generator"]
+include-package-data = true

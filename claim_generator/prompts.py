@@ -203,18 +203,16 @@ Triple: [{subject}, {predicate}, {object}]
 """
 
 
-def get_prompt_template(template: PromptTemplate, **kwargs) -> str:
+def get_prompt_template(template, **kwargs) -> str:
     """
-    Returns the formatted prompt template corresponding to the given enum value.
-
-    Additional formatting parameters (e.g., SOURCE_TEXT, granularity, claim) can be provided as keyword arguments.
-
-    Raises:
-        ValueError: If the template enum is not recognized.
+    Returns the formatted prompt template corresponding to the given enum value or custom string.
+    If `template` is a PromptTemplate enum, it uses the preset templates.
+    If it is a string, it is assumed to be a custom prompt template.
     """
-    try:
+    if isinstance(template, PromptTemplate):
         template_str = PROMPT_TEMPLATES[template]
-    except KeyError:
-        raise ValueError(f"Unrecognized prompt template: {template}")
-
+    elif isinstance(template, str):
+        template_str = template
+    else:
+        raise ValueError("Prompt template must be either a PromptTemplate enum or a custom prompt string.")
     return template_str.format(**kwargs)
