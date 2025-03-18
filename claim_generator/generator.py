@@ -10,9 +10,9 @@ from .config import ModelType
 from .prompts import PromptTemplate, get_prompt_template
 from .triple_to_claim_models import *
 
-from kg_parser import KGParser
-from kg_parser import ModelType as KGModelType
-from kg_parser.prompt_templates import REFINED_CLAIM_PROMPT
+from .kg_pipeline.core import KGParser  # local copy
+from .kg_pipeline.config import KGModelType
+from .kg_pipeline.prompt_templates import REFINED_CLAIM_PROMPT
 
 
 class BaseClaimGenerator(ABC):
@@ -253,25 +253,26 @@ class JanLocalClaimGenerator(BaseClaimGenerator):
 
 
 class KGToClaimsGenerator(BaseClaimGenerator):
-    """
-    A pipeline generator that:
-      1) Uses KGParser to extract triples from raw text.
-      2) Converts each triple to a natural language claim.
-
-    It also exposes intermediate information for synthetic logging:
-      - The original text ("reference")
-      - The full prompt sent to kg-parser
-      - The KG parser's output (in dict form)
-      - The full triple-to-claim prompt for each triple
-      - The array of claims produced
-    """
-
-    def __init__(self, config: ModelConfig):
-        # We ignore the prompt_template since we use the internal kg-parser prompt.
+    def __init__(self, config: ModelConfig, kg_prompt_builder=None):
+        """
+        :param kg_prompt_builder: a function that takes text => custom KG prompt
+        """
         super().__init__(config, PromptTemplate.DEFAULT)
+
+        # Force the config to use the local KGModelType
+        from .kg_pipeline.config import KGModelType
         config.model_type = KGModelType.OPENAI
-        self.kg_parser = KGParser(config)
+
+        # Construct KGParser with the builder
+        self.kg_parser = KGParser(
+            model_config=config,
+            kg_prompt_builder=kg_prompt_builder
+        )
+
+        # Revert the config to normal so triple->claim is done with the appropriate model
+        from .config import ModelType
         config.model_type = ModelType.OPENAI
+
         self.triple_to_claim_model = self._initialize_triple_to_claim_model(config)
 
     def _initialize_triple_to_claim_model(self, config: ModelConfig) -> BaseTripleToClaimModel:
