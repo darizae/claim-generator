@@ -176,3 +176,7 @@ Output JSON:
 ## License
 
 Licensed under the [MIT License](./LICENSE). You are free to modify, distribute, and use the code according to the license terms.
+
+## Agent-assisted setup
+
+[Open the agent setup page](https://darizae.github.io/claim-generator/) or [copy the plain-text prompt](docs/agent-setup.txt) into your coding agent. Review its proposed changes and verification results.
